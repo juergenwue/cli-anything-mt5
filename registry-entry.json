@@ -1,0 +1,16 @@
+{
+  "name": "cli-anything-mt5",
+  "display_name": "MetaTrader 5",
+  "version": "0.1.0",
+  "description": "Compile, deploy, backtest, and optimize MQL5 EAs and indicators on a remote Windows MT5 host via SSH. Agent-native CLI with structured JSON output.",
+  "requires": "Linux/macOS dev host + Windows target with MetaTrader 5 (MetaEditor64 present) and OpenSSH",
+  "homepage": "https://www.metatrader5.com",
+  "source_url": "https://github.com/juergenwue/cli-anything-mt5",
+  "install_cmd": "pip install cli-anything-mt5",
+  "entry_point": "climt5",
+  "skill_md": "https://raw.githubusercontent.com/juergenwue/cli-anything-mt5/main/SKILL.md",
+  "category": "trading",
+  "contributors": [
+    { "name": "juergenwue", "url": "https://github.com/juergenwue" }
+  ]
+}

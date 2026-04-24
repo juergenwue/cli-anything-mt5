@@ -1,0 +1,6 @@
+MetaEditor 5.00 build 4000
+Compiling 'broken.mq5'...
+broken.mq5(12,5) : error 123: undeclared identifier 'xyz'
+broken.mq5(18,10) : warning 42: variable 'unused' is not used
+broken.mq5(25,1) : error 7: expected ';'
+Result: 2 errors, 1 warnings.

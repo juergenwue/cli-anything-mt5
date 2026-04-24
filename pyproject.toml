@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cli-anything-mt5"
+version = "0.1.0"
+description = "Agent-native CLI harness for MetaTrader 5: compile, deploy, backtest MQL5 EAs/indicators over SSH."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Juergen Kral" }]
+keywords = ["mt5", "metatrader", "mql5", "trading", "cli", "agent", "cli-anything"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "click>=8.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "jinja2>=3.1",
+    "lxml>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-mock>=3.10",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+climt5 = "cli_anything_mt5.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/juergenwue/cli-anything-mt5"
+Issues = "https://github.com/juergenwue/cli-anything-mt5/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cli_anything_mt5"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "e2e: end-to-end tests against a real MT5 VM (opt-in via MT5_E2E=1)",
+]
