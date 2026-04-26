@@ -56,3 +56,42 @@ def terminal_tester_dir(terminal_id: str) -> str:
         f'(Join-Path $env:APPDATA '
         f'"MetaQuotes\\Terminal\\{terminal_id}\\Tester")'
     )
+
+
+# --- TOML targets integration -------------------------------------------------
+#
+# Multi-target callers should resolve via `cli_anything_core.targets.load_targets`
+# and `resolve(...)`. The wrapper below is a convenience that picks the legacy
+# default target when the user did not pass `--target=`.
+
+_targets_cache = None
+
+
+def targets():
+    """Load and cache the targets.toml file (lazy)."""
+    global _targets_cache
+    if _targets_cache is None:
+        from cli_anything_core.targets import load_targets
+
+        _targets_cache = load_targets()
+    return _targets_cache
+
+
+def default_target_name() -> str:
+    """Default target when --target was not given.
+
+    Priority:
+    1. Env var MT5_DEFAULT_TARGET
+    2. First target in targets.toml that supports 'mt5' on a Windows host
+    3. 'windowsvm' (legacy expectation)
+    """
+    if env := os.getenv("MT5_DEFAULT_TARGET"):
+        return env
+    try:
+        tf = targets()
+    except Exception:
+        return "windowsvm"
+    for name, t in tf.targets.items():
+        if t.os == "windows" and "mt5" in t.platforms:
+            return name
+    return "windowsvm"

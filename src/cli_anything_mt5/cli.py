@@ -38,6 +38,9 @@ from .commands import (
 from .commands import (
     optimize as optimize_cmd_mod,
 )
+from .commands import (
+    deploy_bash_compat as deploy_bash_compat_mod,
+)
 
 
 @click.group(
@@ -63,6 +66,7 @@ cli.add_command(resolve_includes_cmd.resolve_includes, name="resolve-includes")
 cli.add_command(generate_set_cmd.generate_set, name="generate-set")
 cli.add_command(backtest_cmd_mod.backtest_cmd, name="backtest")
 cli.add_command(optimize_cmd_mod.optimize_cmd, name="optimize")
+cli.add_command(deploy_bash_compat_mod.deploy_bash_compat, name="deploy-bash-compat")
 
 
 if __name__ == "__main__":

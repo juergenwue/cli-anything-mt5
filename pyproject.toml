@@ -26,6 +26,7 @@ classifiers = [
     "Topic :: Office/Business :: Financial :: Investment",
 ]
 dependencies = [
+    "cli-anything-core>=0.1.0",
     "click>=8.0",
     "pydantic>=2.0",
     "python-dotenv>=1.0",

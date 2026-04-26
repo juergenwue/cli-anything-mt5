@@ -183,8 +183,7 @@ def test_parse_report_command_metrics_filter() -> None:
 # list-deployed command with fake SSH
 # ---------------------------------------------------------------------------
 
-def test_list_deployed_parses_tab_separated_output(fake_ssh, monkeypatch) -> None:
-    monkeypatch.setattr(mt5_config, "MT5_TERMINAL_ID", "DEADBEEF" * 4)
+def test_list_deployed_parses_tab_separated_output(fake_ssh) -> None:
     fake_ssh.on(
         r"Get-ChildItem",
         "C:\\Users\\Juergen\\AppData\\Roaming\\MetaQuotes\\Terminal\\X\\MQL5\\Experts\\EA.ex5\t12345\t2026-04-01T12:00:00+00:00\n"
@@ -192,24 +191,33 @@ def test_list_deployed_parses_tab_separated_output(fake_ssh, monkeypatch) -> Non
     )
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["list-deployed", "--json"])
+    result = runner.invoke(cli, ["list-deployed", "--target", "windowsvm", "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output.splitlines()[-1])
     assert payload["status"] == "ok"
-    assert payload["data"]["count"] == 2
-    files = payload["data"]["files"]
+    targets = payload["data"]["targets"]
+    assert len(targets) == 1
+    entry = targets[0]
+    assert entry["status"] == "ok"
+    assert entry["target"] == "windowsvm"
+    assert entry["count"] == 2
+    files = entry["files"]
     assert files[0]["size_bytes"] == 12345
     assert "/" in files[0]["path"]  # backslashes normalized
 
 
 def test_list_deployed_errors_without_terminal_id(fake_ssh, monkeypatch) -> None:
-    monkeypatch.setattr(mt5_config, "MT5_TERMINAL_ID", "")
+    """Force terminal_id to empty in the binding -> Windows runner raises."""
+    from cli_anything_mt5 import config as mt5_config
+    tf = mt5_config.targets()
+    tf.targets["windowsvm"].bindings["mt5"].terminal_id = ""
     runner = CliRunner()
-    result = runner.invoke(cli, ["list-deployed", "--json"])
+    result = runner.invoke(cli, ["list-deployed", "--target", "windowsvm", "--json"])
     assert result.exit_code != 0
     payload = json.loads(result.output.splitlines()[-1])
     assert payload["status"] == "error"
-    assert payload["error"]["code"] == "terminal_id_missing"
+    # Single target failure surfaces underlying ssh_failed code with terminal_id text
+    assert "terminal_id" in payload["error"]["message"].lower()
 
 
 # ---------------------------------------------------------------------------
