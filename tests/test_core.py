@@ -367,12 +367,17 @@ def test_version_check_reports_terminal_ids_and_build(fake_ssh) -> None:
     fake_ssh.on(r"terminal64\.exe", "5.00.4000")
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["version-check", "--json"])
+    result = runner.invoke(cli, ["version-check", "--target=windowsvm", "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output.splitlines()[-1])
     assert payload["status"] == "ok"
-    data = payload["data"]
-    assert data["ssh_ok"] is True
-    assert data["mt5_build"] == "5.00.4000"
-    assert len(data["terminal_ids"]) == 2
-    assert data["active_terminal_id"] == "DEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+    targets = payload["data"]["targets"]
+    assert len(targets) == 1
+    entry = targets[0]
+    assert entry["target"] == "windowsvm"
+    assert entry["status"] == "ok"
+    assert entry["ssh_ok"] is True
+    assert entry["mt5_build"] == "5.00.4000"
+    assert len(entry["terminal_ids"]) == 2
+    # The TOML fixture pre-configures terminal_id, so active_terminal_id comes from binding.
+    assert entry["active_terminal_id"] == "DEADBEEFDEADBEEFDEADBEEFDEADBEEF"

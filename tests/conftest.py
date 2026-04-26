@@ -210,10 +210,19 @@ def fake_ssh(monkeypatch: pytest.MonkeyPatch) -> FakeSsh:
     monkeypatch.setattr(core_ps, "scp_from_powershell", _scp_from)
 
     # Patch the from-imports inside command modules too.
+    def _ssh_ok(client):  # noqa: ANN001
+        try:
+            return _ssh_powershell(client, "Write-Output 'OK'", timeout=10) == "OK"
+        except Exception:
+            return False
+
+    monkeypatch.setattr(core_ps, "ssh_ok_powershell", _ssh_ok)
+
     for mod_name in (
         "cli_anything_mt5.commands.deploy",
         "cli_anything_mt5.commands.compile",
         "cli_anything_mt5.commands.list_deployed",
+        "cli_anything_mt5.commands.version_check",
     ):
         import importlib
 
@@ -226,5 +235,7 @@ def fake_ssh(monkeypatch: pytest.MonkeyPatch) -> FakeSsh:
             monkeypatch.setattr(mod, "scp_to_powershell", _scp_to)
         if hasattr(mod, "scp_from_powershell"):
             monkeypatch.setattr(mod, "scp_from_powershell", _scp_from)
+        if hasattr(mod, "ssh_ok_powershell"):
+            monkeypatch.setattr(mod, "ssh_ok_powershell", _ssh_ok)
 
     return fake

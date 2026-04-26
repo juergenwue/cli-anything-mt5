@@ -1,102 +1,146 @@
-"""`climt5 version-check` - verify VM reachability and discover Terminal ID."""
+"""`climt5 version-check` - VM reachability + Terminal ID discovery (multi-target)."""
 
 from __future__ import annotations
 
+from typing import Any
+
 import click
 
-from .. import config, ssh
-from ..output import emit_error, emit_ok
+from cli_anything_core.ssh import SshError
+from cli_anything_core.ssh_powershell import ssh_ok_powershell, ssh_powershell
+from cli_anything_core.targets import Target
+
+from .. import config
+from ..multi import dispatch, resolve_targets
 
 
-def _discover_terminal_ids() -> list[dict[str, str]]:
-    """Scan MetaQuotes\\Terminal\\* for terminal instances; report mtimes.
-
-    Returns a list of {"id": <hex>, "mtime": <iso>} sorted by mtime desc.
-    """
-    script = """
-$root = Join-Path $env:APPDATA 'MetaQuotes\\Terminal'
-if (-not (Test-Path $root)) { return }
-Get-ChildItem $root -Directory | ForEach-Object {
-    $origin = Join-Path $_.FullName 'origin.txt'
-    $mtime = $_.LastWriteTime.ToString('o')
-    Write-Output ("{0}`t{1}" -f $_.Name, $mtime)
-}
-""".strip()
-    out = ssh.ssh_powershell(script)
+def _discover_terminal_ids(client) -> list[dict[str, str]]:
+    # Note: keep ForEach-Object on a single line — PowerShell's `-Command -`
+    # stdin reader trips over scriptblocks split across lines.
+    script = (
+        '$root = Join-Path $env:APPDATA "MetaQuotes\\Terminal"; '
+        "if (-not (Test-Path $root)) { return }; "
+        "Get-ChildItem $root -Directory | ForEach-Object "
+        "{ Write-Output (\"$($_.Name)`t$($_.LastWriteTime.ToString('o'))\") }"
+    )
+    out = ssh_powershell(client, script)
     ids: list[dict[str, str]] = []
     for line in out.splitlines():
         if "\t" not in line:
             continue
         tid, mtime = line.split("\t", 1)
-        if len(tid) >= 16:  # rough sanity check for hash-style IDs
+        if len(tid) >= 16:
             ids.append({"id": tid, "mtime": mtime})
     ids.sort(key=lambda r: r["mtime"], reverse=True)
     return ids
 
 
-def _mt5_build() -> str | None:
-    """Return the installed MT5 build number by inspecting terminal64.exe."""
-    script = (
-        f'$exe = Join-Path "{config.MT5_ROOT}" "terminal64.exe"; '
-        'if (Test-Path $exe) { '
-        '(Get-Item $exe).VersionInfo.ProductVersion '
-        '} else { Write-Output "missing" }'
-    )
+def _mt5_build_windows(client, t: Target) -> str | None:
+    """Probe terminal64.exe ProductVersion at the per-target install root.
+
+    Resolution order: binding.install_root (TOML) > config.MT5_ROOT (env/.env).
+    """
+    binding = t.binding("mt5")
+    install_root = (
+        getattr(binding, "install_root", None)
+        or binding.model_extra.get("install_root") if binding.model_extra else None
+    ) or config.MT5_ROOT
     try:
-        out = ssh.ssh_powershell(script)
-    except ssh.SshError:
+        script = (
+            f'$exe = Join-Path "{install_root}" "terminal64.exe"; '
+            "if (Test-Path $exe) { (Get-Item $exe).VersionInfo.ProductVersion } "
+            "else { Write-Output 'missing' }"
+        )
+        out = ssh_powershell(client, script)
+    except SshError:
         return None
     return out if out and out != "missing" else None
 
 
-@click.command(help="Verify MT5 VM reachability, terminal build, Terminal ID.")
-@click.option("--json", "json_mode", is_flag=True, help="Machine-readable output.")
-def version_check(json_mode: bool) -> None:
-    data: dict = {
-        "host": config.MT5_HOST,
-        "user": config.MT5_USER,
-        "tcp_reachable": ssh.ping_vm(),
+def _windows_runner(client, t: Target) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "user": t.user,
+        "tcp_reachable": client.ping(),
     }
     if not data["tcp_reachable"]:
-        emit_error(
-            code="vm_unreachable",
-            message=f"Cannot reach {config.MT5_HOST}:22 over TCP.",
-            json_mode=json_mode,
-            details=data,
-        )
+        raise SshError(f"Cannot reach {t.host}:{t.port} over TCP.")
 
-    try:
-        data["ssh_ok"] = ssh.ssh_ok()
-    except ssh.SshError as e:
-        emit_error(
-            code="ssh_failed",
-            message=str(e),
-            json_mode=json_mode,
-            details=data,
-        )
+    data["ssh_ok"] = ssh_ok_powershell(client)
     if not data["ssh_ok"]:
-        emit_error(
-            code="ssh_failed",
-            message="PowerShell smoke test failed.",
-            json_mode=json_mode,
-            details=data,
-        )
+        raise SshError("PowerShell smoke test failed.")
 
     try:
-        data["terminal_ids"] = _discover_terminal_ids()
-    except ssh.SshError as e:
+        data["terminal_ids"] = _discover_terminal_ids(client)
+    except SshError as e:
         data["terminal_ids"] = []
         data["terminal_ids_error"] = str(e)
 
-    configured = config.MT5_TERMINAL_ID or None
+    binding = t.binding("mt5")
+    configured = binding.terminal_id or None
     if configured is None and data["terminal_ids"]:
         configured = data["terminal_ids"][0]["id"]
     data["active_terminal_id"] = configured
 
     try:
-        data["mt5_build"] = _mt5_build()
-    except ssh.SshError as e:
+        data["mt5_build"] = _mt5_build_windows(client, t)
+    except SshError as e:
         data["mt5_build"] = None
         data["mt5_build_error"] = str(e)
 
-    emit_ok(data, json_mode=json_mode)
+    return data
+
+
+def _posix_runner(client, t: Target) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "user": t.user,
+        "tcp_reachable": client.ping(),
+    }
+    if not data["tcp_reachable"]:
+        raise SshError(f"Cannot reach {t.host}:{t.port} over TCP.")
+
+    data["ssh_ok"] = client.ok()
+    if not data["ssh_ok"]:
+        raise SshError("SSH smoke test failed.")
+
+    binding = t.binding("mt5")
+    base = binding.base or ""
+    if base:
+        # Strip {subdir} / {terminal_id} for a parent-root probe.
+        rendered = base.replace("{subdir}", "Experts").replace(
+            "{terminal_id}", binding.terminal_id or ""
+        )
+        try:
+            out = client.ssh_cmd(
+                f"if [ -d {rendered!r} ]; then echo present; else echo missing; fi"
+            )
+            data["mt5_root_status"] = out.strip()
+        except SshError as e:
+            data["mt5_root_status"] = f"error: {e}"
+    return data
+
+
+@click.command(
+    "version-check",
+    help="Verify VM reachability, terminal build, Terminal ID across one or more targets.",
+)
+@click.option(
+    "--target",
+    "target_pattern",
+    default=None,
+    help="Target selector: name, glob, comma list, @group, or 'all'.",
+)
+@click.option("--sequential", is_flag=True, default=False)
+@click.option("--json", "json_mode", is_flag=True, help="Machine-readable output.")
+def version_check(
+    target_pattern: str | None,
+    sequential: bool,
+    json_mode: bool,
+) -> None:
+    targets = resolve_targets(target_pattern, platform="mt5", json_mode=json_mode)
+
+    def _runner(client, t: Target) -> dict[str, Any]:
+        if t.os == "windows":
+            return _windows_runner(client, t)
+        return _posix_runner(client, t)
+
+    dispatch(targets, _runner, sequential=sequential, json_mode=json_mode)
